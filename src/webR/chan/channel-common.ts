@@ -2,7 +2,6 @@ import { SharedBufferChannelMain, SharedBufferChannelWorker } from './channel-sh
 import { ServiceWorkerChannelMain, ServiceWorkerChannelWorker } from './channel-service';
 import { WebROptions } from '../webr-main';
 import { isCrossOrigin } from '../utils';
-import { IN_NODE } from '../compat';
 
 // This file refers to objects imported from `./channel-shared` and
 // `./channel-service.` These can't be included in `./channel` as this
@@ -35,7 +34,7 @@ export function newChannelMain(data: Required<WebROptions>) {
       return new ServiceWorkerChannelMain(data);
     case ChannelType.Automatic:
     default:
-      if (IN_NODE || crossOriginIsolated) {
+      if (typeof SharedArrayBuffer !== 'undefined') {
         return new SharedBufferChannelMain(data);
       }
       /*
@@ -43,7 +42,7 @@ export function newChannelMain(data: Required<WebROptions>) {
        * workers, we could setup a service worker to inject the relevant headers
        * to enable cross-origin isolation.
        */
-      if ('serviceWorker' in navigator && !isCrossOrigin(data.SW_URL)) {
+      if ('serviceWorker' in navigator && !isCrossOrigin(data.serviceWorkerUrl)) {
         return new ServiceWorkerChannelMain(data);
       }
       throw new Error("Can't initialise main thread communication channel");

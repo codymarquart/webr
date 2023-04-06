@@ -14,7 +14,7 @@ import {
 } from '../../webR/robj-main';
 
 const webR = new WebR({
-  WEBR_URL: '../dist/',
+  baseUrl: '../dist/',
   RArgs: ['--quiet'],
 });
 
@@ -615,6 +615,47 @@ describe('Evaluate objects without shelters', () => {
     await expect(webR.evalRRaw('10', 'string[]')).rejects.toThrow("Can't convert");
     await expect(webR.evalRRaw('NULL', 'string[]')).rejects.toThrow("Can't convert");
   });
+});
+
+describe('Interrupt execution', () => {
+  test('Interrupt R code executed using evalR', async () => {
+    const loop = webR.evalRVoid('while(TRUE){}');
+    setTimeout(() => webR.interrupt(), 100);
+    await expect(loop).rejects.toThrow('A non-local transfer of control occured');
+  });
+
+  test('Interrupt webr::eval_js executed using evalR', async () => {
+    const loop = webR.evalRVoid('webr::eval_js("globalThis.Module.webr.readConsole()")');
+    setTimeout(() => webR.interrupt(), 100);
+    await expect(loop).rejects.toThrow('A non-local transfer of control occured');
+  });
+});
+
+test('Invoke a wasm function from the main thread', async () => {
+  const ptr = (await webR.evalRNumber(`
+    webr::eval_js("
+      Module.addFunction((x, y) => x + y, 'iii')
+    ")
+  `));
+  const ret = await webR.invokeWasmFunction(ptr, 667430, 5);
+  expect(ret).toEqual(667435);
+});
+
+test('Invoke a wasm function after a delay', async () => {
+  const ptr = (await webR.evalRNumber(`
+    webr::eval_js("
+      Module.addFunction(() => {
+        const str = Module.allocateUTF8('Hello, World!\\\\n');
+        Module._printf(str);
+        Module._free(str);
+      }, 'vi')
+    ")
+  `));
+  await webR.flush();
+  await webR.evalR(`
+    webr::eval_js("Module.webr.setTimeoutWasm(${ptr}, 500)")
+  `);
+  expect((await webR.read()).data).toBe('Hello, World!');
 });
 
 beforeEach(() => {

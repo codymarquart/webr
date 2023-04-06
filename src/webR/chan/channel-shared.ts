@@ -33,12 +33,12 @@ export class SharedBufferChannelMain extends ChannelMain {
       worker.postMessage(msg);
     };
 
-    if (isCrossOrigin(config.WEBR_URL)) {
-      newCrossOriginWorker(`${config.WEBR_URL}webr-worker.js`, (worker: Worker) =>
+    if (isCrossOrigin(config.baseUrl)) {
+      newCrossOriginWorker(`${config.baseUrl}webr-worker.js`, (worker: Worker) =>
         initWorker(worker)
       );
     } else {
-      const worker = new Worker(`${config.WEBR_URL}webr-worker.js`);
+      const worker = new Worker(`${config.baseUrl}webr-worker.js`);
       initWorker(worker);
     }
 
@@ -49,6 +49,7 @@ export class SharedBufferChannelMain extends ChannelMain {
     if (!this.#interruptBuffer) {
       throw new Error('Failed attempt to interrupt before initialising interruptBuffer');
     }
+    this.inputQueue.reset();
     this.#interruptBuffer[0] = 1;
   }
 
@@ -76,6 +77,10 @@ export class SharedBufferChannelMain extends ChannelMain {
 
       case 'response':
         this.resolveResponse(message as Response);
+        return;
+
+      case 'system':
+        this.systemQueue.put(message.data as Message);
         return;
 
       default:
@@ -129,6 +134,10 @@ export class SharedBufferChannelWorker implements ChannelWorker {
 
   write(msg: Message, transfer?: [Transferable]) {
     this.#ep.postMessage(msg, transfer);
+  }
+
+  writeSystem(msg: Message, transfer?: [Transferable]) {
+    this.#ep.postMessage({ type: 'system', data: msg }, transfer);
   }
 
   read(): Message {

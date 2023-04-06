@@ -36,26 +36,28 @@ export class ServiceWorkerChannelMain extends ChannelMain {
     const initWorker = (worker: Worker) => {
       this.#handleEventsFromWorker(worker);
       this.close = () => worker.terminate();
-      this.#registerServiceWorker(`${config.SW_URL}webr-serviceworker.js`).then((clientId) => {
-        const msg = {
-          type: 'init',
-          data: {
-            config,
-            channelType: ChannelType.ServiceWorker,
-            clientId,
-            location: window.location.href,
-          },
-        } as Message;
-        worker.postMessage(msg);
-      });
+      this.#registerServiceWorker(`${config.serviceWorkerUrl}webr-serviceworker.js`).then(
+        (clientId) => {
+          const msg = {
+            type: 'init',
+            data: {
+              config,
+              channelType: ChannelType.ServiceWorker,
+              clientId,
+              location: window.location.href,
+            },
+          } as Message;
+          worker.postMessage(msg);
+        }
+      );
     };
 
-    if (isCrossOrigin(config.SW_URL)) {
-      newCrossOriginWorker(`${config.SW_URL}webr-worker.js`, (worker: Worker) =>
+    if (isCrossOrigin(config.serviceWorkerUrl)) {
+      newCrossOriginWorker(`${config.serviceWorkerUrl}webr-worker.js`, (worker: Worker) =>
         initWorker(worker)
       );
     } else {
-      const worker = new Worker(`${config.SW_URL}webr-worker.js`);
+      const worker = new Worker(`${config.serviceWorkerUrl}webr-worker.js`);
       initWorker(worker);
     }
 
@@ -127,6 +129,7 @@ export class ServiceWorkerChannelMain extends ChannelMain {
             uuid: uuid,
             response: newResponse(uuid, response),
           });
+          this.inputQueue.reset();
           this.#interrupted = false;
           break;
         }
@@ -160,6 +163,10 @@ export class ServiceWorkerChannelMain extends ChannelMain {
 
       case 'response':
         this.resolveResponse(message as Response);
+        return;
+
+      case 'system':
+        this.systemQueue.put(message.data as Message);
         return;
 
       default:
@@ -208,6 +215,10 @@ export class ServiceWorkerChannelWorker implements ChannelWorker {
 
   write(msg: Message, transfer?: [Transferable]) {
     this.#ep.postMessage(msg, transfer);
+  }
+
+  writeSystem(msg: Message, transfer?: [Transferable]) {
+    this.#ep.postMessage({ type: 'system', data: msg }, transfer);
   }
 
   syncRequest(message: Message): Response {

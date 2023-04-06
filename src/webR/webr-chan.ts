@@ -3,6 +3,7 @@
  */
 import { Message } from './chan/message';
 import { UUID as ShelterID } from './chan/task-common';
+import { EmPtr } from './emscripten';
 import { WebRPayloadWorker, WebRPayloadPtr } from './payload';
 import { RType, WebRData } from './robj';
 
@@ -25,12 +26,12 @@ export interface CallRObjectMethodMessage extends Message {
 export interface EvalROptions {
   /**
    * The R environment to evaluate within.
-   * Deafult: The global environment.
+   * Default: The global environment.
    */
   env?: WebRData;
   /**
    * Should the stdout and stderr output streams be captured and returned?
-   * Deafult: `true`.
+   * Default: `true`.
    */
   captureStreams?: boolean;
   /**
@@ -45,12 +46,12 @@ export interface EvalROptions {
   withAutoprint?: boolean;
   /**
    * Should an R error condition be re-thrown as a JavaScript exception?
-   * Deafult: `true`.
+   * Default: `true`.
    */
   throwJsException?: boolean;
   /**
    * Should the code be executed using a `tryCatch` with handlers in place?
-   * Deafult: `true`.
+   * Default: `true`.
    */
   withHandlers?: boolean;
 }
@@ -118,6 +119,12 @@ export interface FSWriteFileMessage extends Message {
     data: ArrayBufferView;
     flags?: string;
   };
+}
+
+/** @internal */
+export interface InvokeWasmFunctionMessage extends Message {
+  type: 'invokeWasmFunction';
+  data: { ptr: EmPtr; args: number[] };
 }
 
 /** @internal */
