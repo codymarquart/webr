@@ -153,3 +153,23 @@ export interface ShelterDestroyMessage extends Message {
   type: 'shelterDestroy';
   data: { id: ShelterID; obj: WebRPayloadPtr };
 }
+
+export interface CanvasMessage extends Message {
+  type: 'canvas',
+  data: {
+    event: 'canvasNewPage';
+  } | {
+    event: 'canvasImage';
+    image: ImageBitmap;
+  };
+}
+
+export interface PagerMessage extends Message {
+  type: 'pager';
+  data: {
+    path: string;
+    header: string;
+    title: string;
+    deleteFile: boolean;
+  };
+}

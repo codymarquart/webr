@@ -28,6 +28,9 @@ await webR.init();
 
 This example demonstrates running R code with [`WebR.evalR()`](api/js/classes/WebR.WebR.md#evalr) and getting the result [in the form of an `RObject` proxy](objects.qmd). The result is then [converted into a JavaScript object](convert-r-to-js.qmd) before being output to the JavaScript console.
 
+::: {.panel-tabset}
+## JavaScript
+
 ``` javascript
 let result = await webR.evalR('rnorm(10,5,1)');
 let output = await result.toArray();
@@ -35,12 +38,27 @@ let output = await result.toArray();
 console.log('Result of running `rnorm` from webR: ', output);
 ```
 
+## TypeScript
+
+``` typescript
+import type { RDouble } from '@r-wasm/webr';
+
+let result = await webR.evalR('rnorm(10,5,1)') as RDouble;
+let output = await result.toArray();
+
+console.log('Result of running `rnorm` from webR: ', output);
+```
+
+:::
+
     Result of running `rnorm` from webR: [4.811743371393964,
     3.9713199286446246, 5.752161964201946, 4.699964764731866,
     6.793839154500917, 5.80036239061935, 5.342100112394279,
     5.555879371932934, 4.314676418095938, 5.113592217724398]
 
 The `options` argument of [`WebR.evalR()`](api/js/classes/WebR.WebR.md#evalr) has been designed so that the default is sufficient for general R evaluation. However, the default behaviour can be changed by passing an `options` argument of type [`EvalROptions`](api/js/interfaces/WebRChan.EvalROptions.md), if required.
+
+See the [Evaluating R Code](evaluating.qmd) section for more detailed documentation.
 
 ### Capturing console output from R code
 
@@ -68,6 +86,9 @@ shelter.purge();
 
 The following snippet demonstrates executing an R function from JavaScript. A reference to the R function is first obtained as an [`RFunction`](api/js/modules/RMain.md#rfunction) JavaScript proxy, and then executed in a similar way to a normal JavaScript function.
 
+::: {.panel-tabset}
+## JavaScript
+
 ``` javascript
 let sin = await webR.evalR('sin');
 let result = await sin([1,2,3]);
@@ -76,25 +97,66 @@ console.log('Result of running `await sin([1,2,3])`:')
 console.log(result.values);
 ```
 
+## TypeScript
+
+``` typescript
+import type { RFunction } from '@r-wasm/webr';
+
+let sin = await webR.evalR('sin') as RFunction;
+let result = await sin([1,2,3]);
+
+console.log('Result of running `await sin([1,2,3])`:')
+console.log(result);
+```
+
+:::
+
     Result of running `await sin([1,2,3])`:
-    [0.8414709848078965, 0.9092974268256817, 0.1411200080598672]
+    {
+      type: 'double',
+      names: null,
+      values: [ 0.8414709848078965, 0.9092974268256817, 0.1411200080598672 ]
+    }
 
 ### Evaluating R code within an environment
 
 The `options` argument of [`WebR.evalR()`](api/js/classes/WebR.WebR.md#evalr) can be used to control how R code is executed. In this example the options argument is used to create a new environment for the R code to be evaluated in.
 
+::: {.panel-tabset}
+## JavaScript
+
 ``` javascript
-let result = await webR.evalR('foo + bar', { env: { foo: 1234, bar: 1 } });
+let result = await webR.evalR('foo + bar', {
+  env: { foo: 1234, bar: 1, baz: 'abc' }
+});
 let output = await result.toNumber();
 
 console.log(output);
 ```
+
+## TypeScript
+
+``` typescript
+import type { RDouble } from '@r-wasm/webr';
+
+let result = await webR.evalR('foo + bar', {
+  env: { foo: 1234, bar: 1, baz: 'abc' }
+}) as RDouble;
+
+let output = await result.toNumber();
+console.log(output);
+```
+
+:::
 
     1235
 
 ### Bind a JavaScript object into the R global environment
 
 The following snippet demonstrates binding a JavaScript object into the R global environment. The JavaScript object is automatically converted into an R object, and the value is then used in the subsequent R evaluation.
+
+::: {.panel-tabset}
+## JavaScript
 
 ``` javascript
 await webR.objs.globalEnv.bind('arr', [2,4,6,8,9]);
@@ -104,11 +166,55 @@ let output = await result.toArray();
 console.log(output);
 ```
 
+## TypeScript
+
+``` typescript
+import type { RDouble } from '@r-wasm/webr';
+
+await webR.objs.globalEnv.bind('arr', [2,4,6,8,9]);
+let result = await webR.evalR('sample(arr, 3)') as RDouble;
+let output = await result.toArray();
+
+console.log(output);
+```
+
+:::
+
     [2, 9, 6]
+
+### Testing and narrowing R object types
+
+Since functions such as [`WebR.evalR()`](api/js/classes/WebR.WebR.md#evalr) may run arbitrary R code, it is not always clear what type of R object will be returned. To help manage the ambiguity, webR provides [type predicate functions](api/js/modules/RMain.md#functions) for several types of `RObject`.
+
+These functions return boolean `true` if the argument's R object type matches, and so different actions can be taken at runtime depending on the type of a given R object. This is particularly useful for TypeScript users, where the compiler is able to use the functions to narrow the R object type automatically.
+
+In this example, an R numeric, character, or list could be returned randomly by the `sample` function. Type predicate functions are used to detect and handle each case.
+
+``` typescript
+import { isRDouble, isRCharacter, isRList } from '@r-wasm/webr';
+
+let result = await webR.evalR(`
+  sample( list(50.75, "foo", list(1,2,3)) , 1)[[1]]
+`);
+
+if (isRDouble(result)) {
+  let output = await result.toNumber();
+  console.log('A number: ', output)
+} else if (isRCharacter(result)) {
+  let output = await result.toString();
+  console.log('A string: ', output)
+} else if (isRList(result)) {
+  let output = (await result.toArray()).length;
+  console.log('A list with ', output, 'elements.')
+}
+```
 
 ### Cleaning up after an R object is no longer in use
 
 R object references in the form of an `RObject` are subject to [memory management](objects.qmd#memory-management) and should be destroyed when they are no longer required. This signals to R that the object referenced may be deleted by the garbage collector.
+
+::: {.panel-tabset}
+## JavaScript
 
 ``` javascript
 let result = await webR.evalR('rnorm(3,5,1)');
@@ -118,7 +224,56 @@ console.log(output);
 webR.destroy(result);
 ```
 
+## TypeScript
+
+``` typescript
+import type { RDouble } from '@r-wasm/webr';
+
+let result = await webR.evalR('rnorm(3,5,1)') as RDouble;
+let output = await result.toArray();
+console.log(output);
+
+webR.destroy(result);
+```
+
+:::
+
     [5.373198157561013, 4.493213148077507, 5.134879842881727]
+
+### Plotting with a HTML canvas element
+
+WebR's support package includes a built in graphics device, [`webr::canvas()`](api/r.html#canvas). When R uses this device, messages are sent to the main thread containing bitmap image data. The image data can then be displayed using a HTML [Canvas](https://developer.mozilla.org/en-US/docs/Web/API/Canvas_API) element on the page.
+
+In this example, R executes a plotting command and webR's output message queue is then [flushed](api/js/classes/WebR.WebR.md#flush). The image data is retrieved from the output messages and drawn to the HTML Canvas element with fixed `id="plot-canvas"`.
+
+``` html
+<canvas id="plot-canvas" width="1008" height="1008"></canvas>
+
+<script type="module">
+    import { WebR } from 'https://webr.r-wasm.org/latest/webr.mjs';
+    const webR = new WebR();
+
+    await webR.evalRVoid(`
+      webr::canvas()
+      plot(rnorm(1000), rnorm(1000),
+           xlab="x axis label", ylab="y axis label",
+           main="An rnorm plot")
+      dev.off()
+    `);
+
+    const msgs = await webR.flush();
+    msgs.forEach(msg => {
+      if (msg.type === 'canvas' && msg.data.event === 'canvasImage') {
+        const canvas = document.getElementById('plot-canvas');
+        canvas.getContext('2d').drawImage(msg.data.image, 0, 0);
+      } else {
+        console.log(msg);
+      }
+    });
+</script>
+```
+
+See the [Plotting](plotting.qmd) section for further information about plotting with webR.
 
 ## Fully worked examples
 
@@ -179,7 +334,7 @@ After loading, the resulting web page should present an interactive R console si
   </div>
 </div>
 <script type="module">
-  import { Console } from 'https://webr.r-wasm.org/v0.1.1/webr.mjs';
+  import { Console } from 'https://webr.r-wasm.org/latest/webr.mjs';
   const webRConsole = new Console({
     stdout: line => document.getElementById('out').append(line + '\n'),
     stderr: line => document.getElementById('out').append(line + '\n'),
@@ -206,65 +361,15 @@ After loading, the resulting web page should present an interactive R console si
   );
 </script>
 ```
-### Creating a webR React app using `create-react-app`
+### Integrating webR with other frameworks
 
-A simple React app incorporating webR can be bootstrapped using `create-react-app`. First, ensure `create-react-app` is available. For example, install it with npm using,
+See the example repositories below for examples of integrating webR into other JavaScript/TypeScript systems and frameworks.
 
-``` bash
-npm i -g create-react-app
-```
+* <https://github.com/georgestagg/webr-node-example>
+* <https://github.com/georgestagg/webr-react-example>
+* <https://github.com/georgestagg/webr-vue-example>
+* <https://github.com/georgestagg/webr-nextjs-example>
+* <https://github.com/georgestagg/webr-webpack-example>
 
-Next, bootstrap a new React app with `create-react-app`. Enter the new app directory and install webR using npm.
 
-``` bash
-npx create-react-app my-app
-cd my-app
-npm i @r-wasm/webr
-```
 
-Next, set up a middleware for the app's Express instance so that the app is served with the required [cross-origin isolation headers](serving.qmd). To do this, create the following JavaScript file with the path `my-app/src/setupProxy.js`,
-
-``` javascript
-module.exports = function (app) {
-    app.use(function (req, res, next) {
-        res.setHeader("Cross-Origin-Opener-Policy", "same-origin");
-        res.setHeader("Cross-Origin-Embedder-Policy", "require-corp");
-        next();
-    });
-};
-```
-
-Finally, update `src/App.js` to load and use webR,
-
-``` javascript
-import './App.css';
-import React, { useEffect, useState } from 'react'
-import { WebR } from '@r-wasm/webr';
-const webR = new WebR();
-
-function App() {
-  const [ result, updateResult ] = useState(['Loading webR...']);
-  useEffect(() => {
-    async function runRCode() {
-      await webR.init();
-      const rnorm = await webR.evalR('rnorm(5,1,1)');
-      try {
-        const result = await rnorm.toArray();
-        updateResult(result);
-      } finally {
-        webR.destroy(rnorm);
-      }
-    }
-    runRCode();
-  }, []);
-  return (
-    <div className="App">
-      <p>Result of running R code: {result.join(',')}</p>
-    </div>
-  );
-}
-
-export default App;
-```
-
-Test the new app by running `npm start`. The app should automatically open in your browser and show the result of evaluating R code.

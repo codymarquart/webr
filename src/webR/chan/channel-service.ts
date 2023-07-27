@@ -5,13 +5,13 @@ import {
   Response,
   Request,
   newResponse,
-  encodeData,
-  decodeData,
 } from './message';
+import { encode, decode } from '@msgpack/msgpack';
 import { Endpoint } from './task-common';
 import { ChannelMain, ChannelWorker } from './channel';
 import { ChannelType } from './channel-common';
 import { WebROptions } from '../webr-main';
+import { WebRChannelError } from '../error';
 
 import { IN_NODE } from '../compat';
 import type { Worker as NodeWorker } from 'worker_threads';
@@ -35,7 +35,10 @@ export class ServiceWorkerChannelMain extends ChannelMain {
     super();
     const initWorker = (worker: Worker) => {
       this.#handleEventsFromWorker(worker);
-      this.close = () => worker.terminate();
+      this.close = () => {
+        worker.terminate();
+        this.putClosedMessage();
+      };
       this.#registerServiceWorker(`${config.serviceWorkerUrl}webr-serviceworker.js`).then(
         (clientId) => {
           const msg = {
@@ -66,7 +69,7 @@ export class ServiceWorkerChannelMain extends ChannelMain {
 
   activeRegistration(): ServiceWorker {
     if (!this.#registration?.active) {
-      throw new Error('Attempted to obtain a non-existent active registration.');
+      throw new WebRChannelError('Attempted to obtain a non-existent active registration.');
     }
     return this.#registration.active;
   }
@@ -109,7 +112,7 @@ export class ServiceWorkerChannelMain extends ChannelMain {
       const uuid = event.data.data as string;
       const message = this.#syncMessageCache.get(uuid);
       if (!message) {
-        throw new Error('Request not found during service worker XHR request');
+        throw new WebRChannelError('Request not found during service worker XHR request');
       }
       this.#syncMessageCache.delete(uuid);
       switch (message.type) {
@@ -134,7 +137,7 @@ export class ServiceWorkerChannelMain extends ChannelMain {
           break;
         }
         default:
-          throw new TypeError(`Unsupported request type '${message.type}'.`);
+          throw new WebRChannelError(`Unsupported request type '${message.type}'.`);
       }
       return;
     }
@@ -180,7 +183,7 @@ export class ServiceWorkerChannelMain extends ChannelMain {
       }
 
       case 'request':
-        throw new TypeError(
+        throw new WebRChannelError(
           "Can't send messages of type 'request' from a worker." +
             'Use service worker fetch request instead.'
         );
@@ -196,13 +199,14 @@ export class ServiceWorkerChannelWorker implements ChannelWorker {
   #ep: Endpoint;
   #mainThreadId: string;
   #location: string;
+  #lastInterruptReq = Date.now();
   #dispatch: (msg: Message) => void = () => 0;
   #interrupt = () => {};
   onMessageFromMainThread: (msg: Message) => void = () => {};
 
   constructor(data: { clientId?: string; location?: string }) {
     if (!data.clientId || !data.location) {
-      throw Error("Can't start service worker channel");
+      throw new WebRChannelError("Can't start service worker channel");
     }
     this.#mainThreadId = data.clientId;
     this.#location = data.location;
@@ -246,8 +250,8 @@ export class ServiceWorkerChannelWorker implements ChannelWorker {
           clientId: this.#mainThreadId,
           uuid: request.data.uuid,
         };
-        xhr.send(encodeData(fetchReqBody));
-        return decodeData(new Uint8Array(xhr.response as ArrayBuffer)) as Response;
+        xhr.send(encode(fetchReqBody));
+        return decode(xhr.response as ArrayBuffer) as Response;
       } catch (e: any) {
         if (e instanceof DOMException && retryCount++ < 1000) {
           console.log('Service worker request failed - resending request');
@@ -286,11 +290,17 @@ export class ServiceWorkerChannelWorker implements ChannelWorker {
      * thread. Instead, we hook into R's PolledEvents. Since we are not using
      * SharedArrayBuffer as a signal method, we instead send a message to the
      * main thread to ask if we should interrupt R.
+     *
+     * The rate of requests is limited to once per second. This stops the
+     * browser being overloaded with XHR sync requests while R is working.
      */
-    const response = this.syncRequest({ type: 'interrupt' });
-    const interrupted = response.data.resp as boolean;
-    if (interrupted) {
-      this.#interrupt();
+    if (Date.now() > this.#lastInterruptReq + 1000) {
+      this.#lastInterruptReq = Date.now();
+      const response = this.syncRequest({ type: 'interrupt' });
+      const interrupted = response.data.resp as boolean;
+      if (interrupted) {
+        this.#interrupt();
+      }
     }
   }
 

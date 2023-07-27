@@ -1,0 +1,2 @@
+CAIRO_WASM_LIB = $(WASM)/lib/libcairo.a
+OPTIONAL_WASM_LIBS += $(CAIRO_WASM_LIB)

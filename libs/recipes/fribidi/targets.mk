@@ -1,0 +1,2 @@
+FRIBIDI_WASM_LIB = $(WASM)/lib/libfribidi.a
+OPTIONAL_WASM_LIBS += $(FRIBIDI_WASM_LIB)

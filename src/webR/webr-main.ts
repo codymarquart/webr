@@ -15,6 +15,7 @@ import { REnvironment, RSymbol, RInteger } from './robj-main';
 import { RList, RLogical, RNull, RObject, RPairlist, RRaw, RString, RCall } from './robj-main';
 import { replaceInObject } from './utils';
 import * as RWorker from './robj-worker';
+import { WebRError, WebRPayloadError } from './error';
 
 import {
   CaptureRMessage,
@@ -31,7 +32,9 @@ import {
   ShelterMessage,
 } from './webr-chan';
 
-export { Console, ConsoleCallbacks } from '../console/console';
+export { Console, ConsoleCallbacks } from './console';
+export * from './robj-main';
+export * from './error';
 
 /**
  * The webR FS API for interacting with the Emscripten Virtual File System.
@@ -138,9 +141,16 @@ export interface WebROptions {
    * Default: `channelType.Automatic`
    */
   channelType?: (typeof ChannelType)[keyof typeof ChannelType];
+
+  /**
+   * Create the lazy virtual filesystem entries before starting R?
+   * Default: `true`.
+   */
+  createLazyFilesystem?: boolean;
 }
 
 const defaultEnv = {
+  FONTCONFIG_PATH: '/etc/fonts',
   R_HOME: '/usr/lib/R',
   R_ENABLE_JIT: '0',
 };
@@ -154,6 +164,7 @@ const defaultOptions = {
   homedir: '/home/web_user',
   interactive: true,
   channelType: ChannelType.Automatic,
+  createLazyFilesystem: true,
 };
 
 /**
@@ -193,7 +204,14 @@ export class WebR {
   Shelter;
 
   constructor(options: WebROptions = {}) {
-    const config: Required<WebROptions> = Object.assign(defaultOptions, options);
+    const config: Required<WebROptions> = {
+      ...defaultOptions,
+      ...options,
+      REnv: {
+        ...defaultOptions.REnv,
+        ...options.REnv,
+      }
+    };
     this.#chan = newChannelMain(config);
 
     this.objs = {} as typeof this.objs;
@@ -254,8 +272,17 @@ export class WebR {
             msg.data.args
           );
           break;
+        case 'console.log':
+          console.log(msg.data);
+          break;
+        case 'console.warn':
+          console.warn(msg.data);
+          break;
+        case 'console.error':
+          console.error(msg.data);
+          break;
         default:
-          throw new Error('Unknown system message type `' + msg.type + '`');
+          throw new WebRError('Unknown system message type `' + msg.type + '`');
       }
     }
   }
@@ -310,10 +337,11 @@ export class WebR {
   /**
    * Install a list of R packages from the default webR CRAN-like repo.
    * @param {string[]} packages An array of R pacakge names.
+   * @param {boolean} quiet If true, do not output downloading messages.
    */
-  async installPackages(packages: string[]) {
-    for (const pkg of packages) {
-      const msg = { type: 'installPackage', data: { name: pkg } };
+  async installPackages(packages: string[], quiet = false) {
+    for (const name of packages) {
+      const msg = { type: 'installPackage', data: { name, quiet } };
       await this.#chan.request(msg);
     }
   }
@@ -331,7 +359,6 @@ export class WebR {
    *
    * Stream outputs and any conditions raised during exectution are written to
    * the JavaScript console.
-   *
    * @param {string} code The R code to evaluate.
    * @param {EvalROptions} [options] Options for the execution environment.
    * @returns {Promise<RObject>} The result of the computation.
@@ -358,7 +385,6 @@ export class WebR {
 
   /**
    * Evaluate the given R code, returning the result as a raw JavaScript object.
-   *
    * @param {string} code The R code to evaluate.
    * @param {EvalRMessageOutputType} outputType JavaScript type to return the result as.
    * @param {EvalROptions} [options] Options for the execution environment.
@@ -383,7 +409,7 @@ export class WebR {
       case 'raw':
         return payload.obj;
       case 'ptr':
-        throw new Error('Unexpected ptr payload type returned from evalRVoid');
+        throw new WebRPayloadError('Unexpected ptr payload type returned from evalRVoid');
     }
   }
 
@@ -509,7 +535,6 @@ export class Shelter {
    *
    * Stream outputs and any conditions raised during exectution are written to
    * the JavaScript console. The returned R object is protected by the shelter.
-   *
    * @param {string} code The R code to evaluate.
    * @param {EvalROptions} [options] Options for the execution environment.
    * @returns {Promise<RObject>} The result of the computation.
@@ -524,7 +549,7 @@ export class Shelter {
 
     switch (payload.payloadType) {
       case 'raw':
-        throw new Error('Unexpected payload type returned from evalR');
+        throw new WebRPayloadError('Unexpected payload type returned from evalR');
       default:
         return newRProxy(this.#chan, payload);
     }
@@ -536,7 +561,6 @@ export class Shelter {
    * Stream outputs and conditions raised during exectution are captured and
    * returned as part of the output of this function. Returned R objects are
    * protected by the shelter.
-   *
    * @param {string} code The R code to evaluate.
    * @param {EvalROptions} [options] Options for the execution environment.
    * @returns {Promise<{result: RObject, output: unknown[]}>} An object
@@ -559,7 +583,7 @@ export class Shelter {
 
     switch (payload.payloadType) {
       case 'ptr':
-        throw new Error('Unexpected payload type returned from evalR');
+        throw new WebRPayloadError('Unexpected payload type returned from evalR');
 
       case 'raw': {
         const data = payload.obj as {

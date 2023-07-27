@@ -1,0 +1,2 @@
+PIXMAN_WASM_LIB = $(WASM)/lib/libpixman-1.a
+OPTIONAL_WASM_LIBS += $(PIXMAN_WASM_LIB)

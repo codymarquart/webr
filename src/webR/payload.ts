@@ -4,6 +4,7 @@
  * @module Payload
  */
 import { WebRDataRaw, RPtr, RType } from './robj';
+import { WebRWorkerError } from './error';
 
 export type WebRPayloadRaw = {
   obj: WebRDataRaw;
@@ -34,16 +35,18 @@ export type WebRPayload = WebRPayloadRaw | WebRPayloadPtr;
 export type WebRPayloadWorker = WebRPayloadRaw | WebRPayloadPtr | WebRPayloadErr;
 
 /* @internal */
-export function webRPayloadError(payload: WebRPayloadErr): Error {
-  const e = new Error(payload.obj.message);
-  e.name = payload.obj.name;
+export function webRPayloadAsError(payload: WebRPayloadErr): Error {
+  const e = new WebRWorkerError(payload.obj.message);
+  // Forward the error name to the main thread, if more specific than a general `Error`
+  if (payload.obj.name !== 'Error') {
+    e.name = payload.obj.name;
+  }
   e.stack = payload.obj.stack;
   return e;
 }
 
 /**
  * Test for an WebRPayload instance.
- *
  * @param {any} value The object to test.
  * @returns {boolean} True if the object is an instance of an WebRPayload.
  */
@@ -53,7 +56,6 @@ export function isWebRPayload(value: any): value is WebRPayload {
 
 /**
  * Test for an WebRPayloadPtr instance.
- *
  * @param {any} value The object to test.
  * @returns {boolean} True if the object is an instance of an WebRPayloadPtr.
  */
@@ -63,7 +65,6 @@ export function isWebRPayloadPtr(value: any): value is WebRPayloadPtr {
 
 /**
  * Test for an WebRPayloadRaw instance.
- *
  * @param {any} value The object to test.
  * @returns {boolean} True if the object is an instance of an WebRPayloadRaw.
  */

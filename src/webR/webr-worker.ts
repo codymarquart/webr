@@ -388,8 +388,11 @@ function dispatch(msg: Message): void {
           }
 
           case 'installPackage': {
-            // TODO: Use `evalRVoid()`
-            evalR(`webr::install("${reqMsg.data.name as string}", repos="${_config.repoUrl}")`);
+            evalR(`webr::install(
+              "${reqMsg.data.name as string}",
+              repos = "${_config.repoUrl}",
+              quiet = ${reqMsg.data.quiet ? 'TRUE' : 'FALSE'}
+            )`);
 
             write({
               obj: true,
@@ -601,20 +604,26 @@ function evalR(code: string, options: EvalROptions = {}): RObject {
       const outputType = out.get('type').toString();
       switch (outputType) {
         case 'stdout':
-          console.log(out.get('data').toString());
+          chan?.writeSystem({ type: 'console.log', data: out.get('data').toString() });
           break;
         case 'stderr':
-          console.warn(out.get('data').toString());
+          chan?.writeSystem({ type: 'console.warn', data: out.get('data').toString() });
           break;
         case 'message':
-          console.warn(out.pluck('data', 'message')?.toString() || '');
+          chan?.writeSystem({
+            type: 'console.warn',
+            data: out.pluck('data', 'message')?.toString() || '',
+          });
           break;
         case 'warning':
-          console.warn(`Warning message: \n${out.pluck('data', 'message')?.toString() || ''}`);
+          chan?.writeSystem({
+            type: 'console.warn',
+            data: `Warning message: \n${out.pluck('data', 'message')?.toString() || ''}`,
+          });
           break;
         default:
-          console.warn(`Output of type ${outputType}:`);
-          console.warn(out.get('data').toJs());
+          chan?.writeSystem({ type: 'console.warn', data: `Output of type ${outputType}:` });
+          chan?.writeSystem({ type: 'console.warn', data: out.get('data').toJs() });
           break;
       }
     }
@@ -650,10 +659,12 @@ function init(config: Required<WebROptions>) {
     if (IN_NODE) {
       globalThis.FS = Module.FS;
     }
+    if (_config.createLazyFilesystem) {
+      Module.createLazyFilesystem();
+    }
     Module.FS.mkdirTree(_config.homedir);
     Module.ENV.HOME = _config.homedir;
     Module.FS.chdir(_config.homedir);
-
     Module.ENV = Object.assign(Module.ENV, env);
   });
 
@@ -724,9 +735,6 @@ function init(config: Required<WebROptions>) {
   };
   Module.setPrompt = (prompt: string) => {
     chan?.write({ type: 'prompt', data: prompt });
-  };
-  Module.canvasExec = (op: string) => {
-    chan?.write({ type: 'canvasExec', data: op });
   };
 
   // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access

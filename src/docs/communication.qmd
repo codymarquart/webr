@@ -47,7 +47,7 @@ webR.read().then((message) => {
 
     { type: 'stdout', data: 'R is a collaborative project with many contributors.' }
 
-## Message passing and requests
+## Message passing and requests {#messages}
 
 Communication between the main thread and the webR worker thread is in the form of messages sent over an established communication channel. A web application making use of webR should send input messages and handle output messages.
 
@@ -74,7 +74,7 @@ The [`WebR.close()`](api/js/classes/WebR.WebR.md#close) method closes down the c
 A useful pattern for a web application making use of webR is to handle output messages in an asynchronous loop,
 
 ``` javascript
-async run() {
+async function run() {
   for (;;) {
     const output = await webR.read();
     switch (output.type) {
@@ -119,7 +119,7 @@ A convenience function [`WebR.installPackages()`](api/js/classes/WebR.WebR.md#in
 
 A long running R computation can be interrupted by sending an interruption request message using the [`WebR.interrupt()`](api/js/classes/WebR.WebR.md#interrupt) method.
 
-### Ouput messages
+### Output messages
 
 #### Standard output streams
 
@@ -137,25 +137,27 @@ Messages of type `prompt` are sent to the output queue when R has given a prompt
 { type: 'prompt', data: string }
 ```
 
-#### Plotting with the webR HTML canvas
+#### Closed
 
-WebR's version of R built for WebAssembly includes a built in graphics device, `canvas()`, designed for drawing using the JavaScript [Canvas API](https://developer.mozilla.org/en-US/docs/Web/API/Canvas_API). This graphics device is implemented by sending messages of type `canvasExec` to the main thread for processing.
-
-The Canvas API messages are of the form,
+A message of type `closed` is issued when the webR worker thread and communication channel have been terminated using [`WebR.close()`](api/js/classes/WebR.WebR.md#close). This message indicates that the webR instance should no longer be used and no further messages will be issued. The `data` property is undefined for this type of message.
 
 ``` javascript
-{ type: 'canvasExec', data: string }
+{ type: 'closed' }
 ```
 
-where the `data` property contains a string that is to be interpreted as a single Canvas API call. Canvas message data can be append to any 2D canvas context that is available on the main thread, and then executed by constructing a JavaScript [`Function()`](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Function/Function).
+This type of message can be a useful signal to break out of an otherwise infinite asynchronous loop of reading webR output messages.
 
-For example, for a fixed HTML canvas element with `id="plot-canvas"`, messages of type `canvasExec` could be handled by executing,
+#### Canvas
+
+Messages from webR's supporting `webr::canvas()` graphics device are of the form,
 
 ``` javascript
-Function(`
-  document.getElementById('plot-canvas').getContext('2d').${message.data}
-`)();
+{ type: 'canvas', data: { event: string, image?: ImageBitmap } }
 ```
+
+The `event` property gives the name of the event type emitted from the graphics device. Plot image data is transmitted to the main thread in a `'canvasImage'` event. Other types of event may be emitted, for example to signify that a new plot has begun.
+
+Further information about plotting with webR can be found in the [Plotting](plotting.qmd) section.
 
 ### Emscripten virtual filesystem
 
@@ -194,6 +196,6 @@ A long running R computation can be interrupted by calling the [`Console.interru
 
 The `prompt` callback function is called when webR produces a prompt at the REPL and is awaiting user input. The prompt character (usually `>` or `+`) is given as the first argument to the callback function. The default implementation of `prompt` shows a JavaScript prompt asking the user for input, and then sends the user input to `stdin`.
 
-The `canvasExec` callback function is called when webR writes plots to the built-in HTML canvas graphics device. Once the default HTML canvas has been written to (e.g. by plotting something in R), the HTML canvas element can be accessed with the [`Console.canvas`](api/js/classes/WebR.Console.html#canvas) instance property.
+The `canvasImage` callback function is called when webR writes plots to the built-in HTML canvas graphics device. Once the default HTML canvas has been written to (e.g. by plotting something in R), the HTML canvas element can be accessed with the [`Console.canvas`](api/js/classes/WebR.Console.html#canvas) instance property.
 
 See the [Example Usage](examples.qmd) page to see a worked example of a HTML web page loading webR and starting a `Console`, creating an interactive R REPL directly in the page.

@@ -10,9 +10,10 @@
     "esModuleInterop": true,
     "allowSyntheticDefaultImports": true,
     "declaration": true,
-    "types": ["node", "emscripten", "jquery", "xterm", "jstree", "jest"],
+    "types": ["node", "emscripten", "xterm", "jest"],
     "lib": ["dom", "webworker"],
-    "emitDeclarationOnly": true
+    "emitDeclarationOnly": true,
+    "jsx": "react",
   },
   "typedocOptions": {
     "entryPointStrategy": "expand",
@@ -35,5 +36,5 @@
     "excludePrivate": true,
     "excludeInternal": true,
   },
-  "include": ["**/*.ts"],
+  "include": ["**/*.ts", "**/*.tsx"],
 }

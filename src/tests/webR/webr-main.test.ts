@@ -1,6 +1,5 @@
 import { WebR } from '../../webR/webr-main';
 import { Message } from '../../webR/chan/message';
-import { promiseHandles } from '../../webR/utils';
 import {
   RDouble,
   RLogical,
@@ -88,37 +87,20 @@ describe('Evaluate R code', () => {
     expect((await webR.read()).data).toBe('Hello, stderr!');
   });
 
-  /* Since console.log and console.warn are called from the worker thread in the
-   * next two tests, we cannot mock them in the usual way. Instead we spy on
-   * node's process.stdout and process.stderr streams, where console logging is
-   * ultimately written.
-   */
   test('Send output to console.log while evaluating R code', async () => {
-    const waitForOutput = promiseHandles();
-    const spyStdout = jest.spyOn(process.stdout, 'write').mockImplementation(() => {
-      waitForOutput.resolve();
-      return true;
-    });
+    const logSpy = jest.spyOn(console, 'log').mockImplementation((...args) => {});
     await webR.evalR('print(c(30, 42, 66, 70, 78, 102))');
-    await waitForOutput.promise;
-    const buffer = spyStdout.mock.calls[0][0] as Buffer;
-    expect(buffer.includes('[1]  30  42  66  70  78 102')).toEqual(true);
-    spyStdout.mockReset();
-    spyStdout.mockRestore();
+    await webR.evalR('print(c("foo", "bar", "baz"))');
+    expect(logSpy).toHaveBeenCalledWith('[1]  30  42  66  70  78 102');
+    expect(logSpy).toHaveBeenCalledWith('[1] "foo" "bar" "baz"');
+    logSpy.mockRestore();
   });
 
   test('Send conditions to console.warn while evaluating R code', async () => {
-    const waitForOutput = promiseHandles();
-    const spyStderr = jest.spyOn(process.stderr, 'write').mockImplementation(() => {
-      waitForOutput.resolve();
-      return true;
-    });
+    const warnSpy = jest.spyOn(console, 'warn').mockImplementation((...args) => {});
     await webR.evalR('warning("This is a warning!")');
-    await waitForOutput.promise;
-    const buffer = spyStderr.mock.calls[0][0] as Buffer;
-    expect(buffer.includes('Warning message: \nThis is a warning!')).toEqual(true);
-    spyStderr.mockReset();
-    spyStderr.mockRestore();
+    expect(warnSpy).toHaveBeenCalledWith('Warning message: \nThis is a warning!');
+    warnSpy.mockRestore();
   });
 
   test('Error conditions are re-thrown in JS when evaluating R code', async () => {
@@ -656,6 +638,70 @@ test('Invoke a wasm function after a delay', async () => {
     webr::eval_js("Module.webr.setTimeoutWasm(${ptr}, 500)")
   `);
   expect((await webR.read()).data).toBe('Hello, World!');
+});
+
+test('Close webR communication channel', async () => {
+  const tempR = new WebR({ baseUrl: '../dist/' });
+  await tempR.init();
+
+  // Promise resolves when the webR communication channel closes
+  const closedPromise = new Promise((resolve) => {
+    (async () => {
+      for (;;) {
+        const output = await tempR.read();
+        if (output.type === 'closed') {
+          break;
+        }
+      }
+      resolve(true);
+    })();
+  });
+
+  // Generate some activity
+  tempR.writeConsole('foo <- 123');
+  tempR.writeConsole('print(foo)');
+
+  // Close the channel
+  tempR.close();
+  await expect(closedPromise).resolves.toEqual(true);
+});
+
+test('Default and user provided REnv properties are merged', async () => {
+  const tempR = new WebR({
+    baseUrl: '../dist/',
+    REnv: {
+      FOO: 'bar',
+    }
+  });
+  await tempR.init();
+
+  // Confirm default REnv settings
+  const jit = await tempR.evalRString('Sys.getenv("R_ENABLE_JIT")');
+  const home = await tempR.evalRString('Sys.getenv("R_HOME")');
+  expect(jit).toEqual('0');
+  expect(home).toEqual('/usr/lib/R');
+
+  // Confirm a user REnv setting
+  const foo = await tempR.evalRString('Sys.getenv("FOO")');
+  expect(foo).toEqual('bar');
+  tempR.close();
+});
+
+test('WebR starts and is usable without lazy filesystem entries', async () => {
+  const tempR = new WebR({
+    baseUrl: '../dist/',
+    createLazyFilesystem: false,
+  });
+  await tempR.init();
+
+  // Confirm webR is able to startup and run
+  const sum = await tempR.evalRNumber('2 + 276709');
+  expect(sum).toEqual(276711);
+
+  // Confirm no lazy filesystem entries have been added
+  await expect(tempR.FS.lookupPath('/usr/lib/R/doc/NEWS.rds')).rejects.toThrow('FS error');
+
+  tempR.close();
 });
 
 beforeEach(() => {
