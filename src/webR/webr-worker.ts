@@ -390,7 +390,7 @@ function dispatch(msg: Message): void {
           case 'installPackage': {
             evalR(`webr::install(
               "${reqMsg.data.name as string}",
-              repos = "${_config.repoUrl}",
+              repos = "${reqMsg.data.repoUrl ? reqMsg.data.repoUrl: _config.repoUrl}",
               quiet = ${reqMsg.data.quiet ? 'TRUE' : 'FALSE'}
             )`);
 

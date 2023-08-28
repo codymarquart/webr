@@ -339,9 +339,9 @@ export class WebR {
    * @param {string[]} packages An array of R pacakge names.
    * @param {boolean} quiet If true, do not output downloading messages.
    */
-  async installPackages(packages: string[], quiet = false) {
+  async installPackages(packages: string[], quiet = false, repoUrl = undefined) {
     for (const name of packages) {
-      const msg = { type: 'installPackage', data: { name, quiet } };
+      const msg = { type: 'installPackage', data: { name, quiet, repoUrl } };
       await this.#chan.request(msg);
     }
   }
